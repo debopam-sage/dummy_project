@@ -8,7 +8,7 @@ describe('Counter', () => {
     expect(screen.getByText('Counter: 5')).toBeInTheDocument()
   })
 
-  it('increments counter when increment button is clickedd', () => {
+  it('increments counter when increment button is clicked', () => {
     render(<Counter />)
     const incrementButton = screen.getByText('Increment')
     fireEvent.click(incrementButton)

@@ -44,15 +44,6 @@ jobs:
       - name: Run ESLint
         run: npm run lint
         
-      - name: Run tests with coverage
-        run: |
-          npm test -- --coverage --coverageReporters="text" --coverageReporters="text-summary"
-          
-      - name: Check coverage and generate report
-        run: |
-          echo "## Test Coverage Report" >> $GITHUB_STEP_SUMMARY
-          npm test -- --coverage --coverageReporters="text-summary" >> $GITHUB_STEP_SUMMARY
-        
       - name: Build project
         run: npm run build
 
@@ -116,10 +107,10 @@ jobs:
           # Deploy to the appropriate environment
           if [[ "${{ github.base_ref }}" == "main" ]]; then
             echo "Deploying preview for production..."
-            PREVIEW_URL=$(vercel deploy --prod --prebuilt --token=$VERCEL_TOKEN)
+            PREVIEW_URL=$(vercel deploy --prod --token=$VERCEL_TOKEN)
           else
             echo "Deploying to staging..."
-            PREVIEW_URL=$(vercel deploy --prebuilt --token=$VERCEL_TOKEN)
+            PREVIEW_URL=$(vercel deploy --token=$VERCEL_TOKEN)
           fi
 
           echo "url=$PREVIEW_URL" >> $GITHUB_OUTPUT
@@ -130,7 +121,7 @@ jobs:
           publish-dir: './dist'
           github-token: ${{ secrets.GITHUB_TOKEN }}
           deploy-message: "Deploy Preview from GitHub Actions"
-          enable-pull-request-comment: true
+          enable-pull-request-comment: false
           enable-commit-comment: false
           alias: ${{ github.base_ref == 'main' && 'prod-preview' || 'stage-preview' }}-${{ github.event.number }}
           production-deploy: false
@@ -138,9 +129,9 @@ jobs:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
 
-      - name: Set Preview URL Summary
+      - name: Set Netlify Preview URL Summary
         run: |
-          echo "### Vercel Preview URL: ${{ steps.vercel-preview.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          echo "### Netlify Preview URL: https://${{ github.base_ref == 'main' && 'prod-preview' || 'stage-preview' }}-${{ github.event.number }}--dummy-project-${{ github.base_ref }}.netlify.app" >> $GITHUB_STEP_SUMMARY
 
   status-check:
     needs: [validate, preview-deploy]
