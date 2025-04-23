@@ -1,0 +1,65 @@
+name: Monthly Netlify Cleanup
+
+on:
+  schedule:
+    - cron: '0 3 1 * *'  # 3 AM UTC, 1st day of month
+  workflow_dispatch:
+
+jobs:
+  cleanup-prod:
+    name: Cleanup Netlify (prod)
+    runs-on: ubuntu-latest
+    environment: prod
+
+    steps:
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Delete prod previews older than 60 days
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          echo "🧹 Cleaning PROD Netlify previews older than 60 days..."
+
+          curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys \
+            | jq -r '.[] | select(.context == "deploy-preview") | [.id, .created_at] | @tsv' \
+            | while IFS=$'\t' read -r id created; do
+                created_epoch=$(date -d "$created" +%s)
+                cutoff_epoch=$(date -d "60 days ago" +%s)
+                if [ "$created_epoch" -lt "$cutoff_epoch" ]; then
+                  echo "🗑 Deleting prod preview: $id from $created"
+                  curl -X DELETE -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+                    https://api.netlify.com/api/v1/deploys/$id
+                fi
+              done
+
+  cleanup-stage:
+    name: Cleanup Netlify (stage)
+    runs-on: ubuntu-latest
+    environment: stage
+
+    steps:
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Delete stage previews older than 60 days
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          echo "🧹 Cleaning STAGE Netlify previews older than 60 days..."
+
+          curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys \
+            | jq -r '.[] | select(.context == "deploy-preview") | [.id, .created_at] | @tsv' \
+            | while IFS=$'\t' read -r id created; do
+                created_epoch=$(date -d "$created" +%s)
+                cutoff_epoch=$(date -d "60 days ago" +%s)
+                if [ "$created_epoch" -lt "$cutoff_epoch" ]; then
+                  echo "🗑 Deleting stage preview: $id from $created"
+                  curl -X DELETE -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+                    https://api.netlify.com/api/v1/deploys/$id
+                fi
+              done
