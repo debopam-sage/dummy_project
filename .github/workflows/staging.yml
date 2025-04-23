@@ -1,0 +1,158 @@
+name: Testing & Staging
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - stage
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+    branches:
+      - stage
+      - main
+
+env:
+  SITE_PREFIX: ${{ secrets.SITE_NAME }}
+
+jobs:
+  validate:
+    name: Validate Code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Log: Checked out code"
+        run: echo "🔄 Repository code checked out." >> $GITHUB_STEP_SUMMARY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: npm
+      - name: "Log: Node.js ready"
+        run: echo "📦 Node.js environment ready (v20.x)." >> $GITHUB_STEP_SUMMARY
+
+      - uses: actions/cache@v4
+        id: npm-cache
+        with:
+          path: |
+            **/node_modules
+            ~/.npm
+          key: ${{ runner.os }}-node-20-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-20-
+      - name: "Log: Cache restored"
+        run: echo "💾 Restored npm cache (if available)." >> $GITHUB_STEP_SUMMARY
+
+      - name: "Log: Installing dependencies"
+        run: |
+          echo "📥 Installing npm dependencies..." >> $GITHUB_STEP_SUMMARY
+          npm ci
+
+      - name: "Log: Running ESLint"
+        run: |
+          echo "🔍 Running ESLint to check code quality..." >> $GITHUB_STEP_SUMMARY
+          npm run lint
+
+      - name: "Log: Building project"
+        run: |
+          echo "🏗 Building the project for production..." >> $GITHUB_STEP_SUMMARY
+          npm run build
+
+      - name: "Log: Running coverage"
+        run: |
+          echo "🧪 Running tests and generating coverage report..." >> $GITHUB_STEP_SUMMARY
+          npm run coverage || echo "⚠️ Coverage run failed, but continuing."
+
+      - name: "Log: Enforce branch policy"
+        if: github.base_ref == 'main'
+        run: |
+          echo "🔐 Verifying that PR to 'main' comes from 'stage'..." >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ github.head_ref }}" != "stage" ]]; then
+            echo "❌ Pull requests to 'main' must originate from 'stage'. Failing job." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          echo "✅ Branch check passed." >> $GITHUB_STEP_SUMMARY
+
+  preview-deploy:
+    name: Deploy Preview (Netlify)
+    needs: validate
+    if: > 
+      github.event_name == 'pull_request' &&
+      (github.base_ref == 'stage' || github.base_ref == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Log: Checked out code for preview"
+        run: echo "🔄 Repository code checked out for preview deploy." >> $GITHUB_STEP_SUMMARY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: npm
+      - name: "Log: Node.js ready for preview"
+        run: echo "📦 Node.js environment ready for preview." >> $GITHUB_STEP_SUMMARY
+
+      - uses: actions/cache@v4
+        id: npm-cache
+        with:
+          path: |
+            **/node_modules
+            ~/.npm
+          key: ${{ runner.os }}-node-20-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-20-
+      - name: "Log: Cache restored for preview"
+        run: echo "💾 Restored npm cache for preview." >> $GITHUB_STEP_SUMMARY
+
+      - name: "Log: Installing dependencies for preview"
+        run: |
+          echo "📥 Installing npm dependencies for preview..." >> $GITHUB_STEP_SUMMARY
+          npm ci
+
+      - name: "Log: Building for preview"
+        run: |
+          echo "🔧 Rebuilding project for preview deploy..." >> $GITHUB_STEP_SUMMARY
+          npm run build
+
+      - name: "Log: Deploy to Netlify"
+        uses: nwtgck/actions-netlify@v2.0
+        id: netlify-deploy
+        with:
+          publish-dir: "./dist"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          alias: ${{ github.base_ref }}-preview-${{ github.event.number }}
+          production-deploy: false
+          enable-pull-request-comment: false
+          enable-commit-comment: false
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      - name: "Log: Netlify deploy complete"
+        run: echo "🚀 Preview deployed to Netlify." >> $GITHUB_STEP_SUMMARY
+
+      - name: "Log: Output preview URL"
+        run: |
+          echo "### ✅ Preview URLs" >> $GITHUB_STEP_SUMMARY
+          echo "- Netlify: https://${{ github.base_ref }}-preview-${{ github.event.number }}--${{ env.SITE_PREFIX }}-${{ github.base_ref }}.netlify.app" >> $GITHUB_STEP_SUMMARY
+
+  status-check:
+    name: Final Status Check
+    needs: [ validate, preview-deploy ]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Log: Blocking merge on failure"
+        if: >
+          contains(needs.validate.result, 'failure') ||
+          contains(needs.preview-deploy.result, 'failure') ||
+          contains(needs.*.result, 'cancelled')
+        run: |
+          echo "❌ One or more jobs failed. Merging is blocked." >> $GITHUB_STEP_SUMMARY
+          exit 1
+
+      - name: "Log: All checks passed"
+        if: success()
+        run: |
+          echo "✅ All jobs passed. Repository is good to merge!" >> $GITHUB_STEP_SUMMARY

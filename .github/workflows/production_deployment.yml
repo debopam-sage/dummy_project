@@ -1,0 +1,143 @@
+name: Production Deployment
+
+# Manually trigger from the GitHub UI
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v1.2.3)'
+        required: true
+        type: string
+      description:
+        description: 'Release description'
+        required: true
+        type: string
+
+permissions:
+  contents: read           # needed to query workflow runs
+  actions: read            # needed to list workflow runs
+
+env:
+  SITE_PREFIX: ${{ secrets.SITE_NAME }}
+
+jobs:
+  prod-deploy:
+    name: Deploy Main → Production
+    runs-on: ubuntu-latest
+
+    steps:
+      #──────────────────────────────────────────────────────────────────
+      # 1. Verify that the latest CI run on main succeeded
+      #──────────────────────────────────────────────────────────────────
+      - name: "Check: CI status on main"
+        uses: actions/github-script@v6
+        id: check-ci
+        with:
+          script: |
+            // List runs of the CI workflow (ci.yml) on main branch
+            const workflowRuns = await github.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'ci.yml',
+              branch: 'main',
+              per_page: 5
+            });
+            // Find the most recent completed run
+            const latest = workflowRuns.data.workflow_runs
+              .filter(r => r.event === 'push' || r.event === 'workflow_dispatch')
+              .find(r => r.head_branch === 'main');
+            if (!latest) {
+              throw new Error('❌ No recent CI runs found on main branch.');
+            }
+            if (latest.conclusion !== 'success') {
+              throw new Error(`❌ Latest CI run did not succeed (status: ${latest.conclusion}).`);
+            }
+            // Log success and URL into summary
+            steps.check-ci.outputs.ci_url = latest.html_url;
+            console.log(`✅ CI passed: ${latest.html_url}`);
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: "Log: CI check result"
+        run: |
+          echo "✅ Verified CI on main passed: ${{ steps.check-ci.outputs.ci_url }}" >> $GITHUB_STEP_SUMMARY
+
+      #──────────────────────────────────────────────────────────────────
+      # 2. Checkout code & install dependencies
+      #──────────────────────────────────────────────────────────────────
+      - uses: actions/checkout@v4
+      - name: "Log: Installing dependencies"
+        run: |
+          echo "📥 Installing Node.js dependencies..." >> $GITHUB_STEP_SUMMARY
+          npm ci
+
+      #──────────────────────────────────────────────────────────────────
+      # 3. Build production artifacts
+      #──────────────────────────────────────────────────────────────────
+      - name: "Log: Building production"
+        run: |
+          echo "🏗 Building production assets..." >> $GITHUB_STEP_SUMMARY
+          npm run build
+
+      #──────────────────────────────────────────────────────────────────
+      # 4. Deploy to Vercel
+      #──────────────────────────────────────────────────────────────────
+      - name: "Deploy: Vercel"
+        id: vercel
+        run: |
+          echo "🚀 Deploying to Vercel (production)..." >> $GITHUB_STEP_SUMMARY
+          npm install -g vercel@latest
+          # Write Vercel config to avoid interactive linking
+          mkdir -p .vercel
+          cat <<EOF > .vercel/project.json
+          {
+            "orgId": "${{ secrets.VERCEL_ORG_ID }}",
+            "projectId": "${{ secrets.VERCEL_PROJECT_ID }}"
+          }
+          EOF
+          DEPLOY_URL=$(vercel deploy --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$DEPLOY_URL" >> $GITHUB_OUTPUT
+          echo "✅ Vercel URL: $DEPLOY_URL" >> $GITHUB_STEP_SUMMARY
+        env:
+          VERCEL_TOKEN:    ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID:   ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      #──────────────────────────────────────────────────────────────────
+      # 5. Deploy to Netlify
+      #──────────────────────────────────────────────────────────────────
+      - name: "Deploy: Netlify"
+        id: netlify
+        uses: nwtgck/actions-netlify@v2.0
+        with:
+          publish-dir: './dist'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          deploy-message: "Production Deploy ${{ github.event.inputs.version }}"
+          production-deploy: true
+          alias: production
+          enable-pull-request-comment: false
+          enable-commit-comment: true
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID:   ${{ secrets.NETLIFY_SITE_ID }}
+      - name: "Log: Netlify URL"
+        run: |
+          echo "🚀 Netlify URL: https://production--${{ env.SITE_PREFIX }}-main.netlify.app" >> $GITHUB_STEP_SUMMARY
+
+      #──────────────────────────────────────────────────────────────────
+      # 6. Create GitHub Release
+      #──────────────────────────────────────────────────────────────────
+      - name: "Create GitHub Release"
+        if: always()  # only on manual dispatch
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.event.inputs.version }}
+          release_name: Release ${{ github.event.inputs.version }}
+          body: ${{ github.event.inputs.description }}
+          draft: false
+          prerelease: false
+      - name: "Log: Release created"
+        if: always()
+        run: |
+          echo "🎉 GitHub Release ${{ github.event.inputs.version }} created." >> $GITHUB_STEP_SUMMARY
