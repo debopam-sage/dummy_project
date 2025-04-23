@@ -18,13 +18,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
           cache: 'npm'
-          
+
       - name: Cache dependencies
         uses: actions/cache@v4
         id: npm-cache
@@ -36,14 +36,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-20-
             ${{ runner.os }}-node-
-            
+
       - name: Install dependencies
         if: steps.npm-cache.outputs.cache-hit != 'true'
         run: npm ci
-        
+
       - name: Run ESLint
         run: npm run lint
-        
+
       - name: Build project
         run: npm run build
 
@@ -64,13 +64,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
           cache: 'npm'
-          
+
       - name: Cache dependencies
         uses: actions/cache@v4
         id: npm-cache
@@ -82,11 +82,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-20-
             ${{ runner.os }}-node-
-          
+
       - name: Install dependencies
         if: steps.npm-cache.outputs.cache-hit != 'true'
         run: npm ci
-        
+
       - name: Build project
         run: npm run build
 
@@ -97,16 +97,23 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          # Install Vercel CLI if not already installed
           npm i -g vercel@latest
 
-          # Deploy to the appropriate environment
+          # Create .vercel/project.json for non-interactive CI linking
+          mkdir -p .vercel
+          cat <<EOF > .vercel/project.json
+          {
+            "orgId": "$VERCEL_ORG_ID",
+            "projectId": "$VERCEL_PROJECT_ID"
+          }
+          EOF
+
           if [[ "${{ github.base_ref }}" == "main" ]]; then
             echo "Deploying preview for production..."
-            PREVIEW_URL=$(vercel deploy --prod --token=$VERCEL_TOKEN --project=$VERCEL_PROJECT_ID)
+            PREVIEW_URL=$(vercel deploy --prod --token=$VERCEL_TOKEN)
           else
             echo "Deploying to staging..."
-            PREVIEW_URL=$(vercel deploy --token=$VERCEL_TOKEN --project=$VERCEL_PROJECT_ID)
+            PREVIEW_URL=$(vercel deploy --token=$VERCEL_TOKEN)
           fi
 
           echo "url=$PREVIEW_URL" >> $GITHUB_OUTPUT
@@ -139,7 +146,7 @@ jobs:
         run: |
           echo "Required checks failed. All checks must pass before merging.."
           exit 1
-      
+
       - name: Success status
         if: success()
         run: |
