@@ -84,19 +84,7 @@ jobs:
   preview-deploy:
     name: Deploy Preview (Netlify)
     needs: validate
-    if: |
-      github.event_name == 'pull_request' &&
-      (github.base_ref == 'stage' || github.base_ref == 'main') &&
-      (
-        contains(toLower(github.event.pull_request.title), 'ready for preview') ||
-        contains(toLower(github.event.pull_request.title), 'deploying') ||
-        contains(toLower(github.event.pull_request.title), 'show preview') ||
-        contains(toLower(github.event.pull_request.title), 'ready to ship') ||
-        contains(toLower(github.event.pull_request.body), 'ready for preview') ||
-        contains(toLower(github.event.pull_request.body), 'deploying') ||
-        contains(toLower(github.event.pull_request.body), 'show preview') ||
-        contains(toLower(github.event.pull_request.body), 'ready to ship')
-      )
+    if: github.event_name == 'pull_request' && (github.base_ref == 'stage' || github.base_ref == 'main')
     runs-on: ubuntu-latest
     environment:
       name: ${{ github.base_ref == 'main' && 'prod' || 'stage' }}
@@ -124,6 +112,19 @@ jobs:
       - name: Install dependencies
         if: steps.npm-cache.outputs.cache-hit != 'true'
         run: npm ci
+
+      - name: Check if PR contains deployment keywords
+        run: |
+          TITLE="${{ github.event.pull_request.title }}"
+          BODY="${{ github.event.pull_request.body }}"
+          TEXT="$(echo "$TITLE $BODY" | tr '[:upper:]' '[:lower:]')"
+
+          if echo "$TEXT" | grep -qE "ready for preview|deploying|show preview|ready to ship"; then
+            echo "🟢 Deployment keywords found, proceeding with Netlify deploy."
+          else
+            echo "🛑 No deploy keywords found in PR title or body. Skipping preview deploy."
+            exit 0
+          fi
 
       - name: Build Project
         run: |
