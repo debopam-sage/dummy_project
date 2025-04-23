@@ -102,7 +102,7 @@ jobs:
       - name: Output Preview URL
         run: |
           echo "### ✅ Preview URLs" >> $GITHUB_STEP_SUMMARY
-          echo "- Netlify: https://${{ github.base_ref }}-preview-${{ github.event.number }}--${{ env.SITE_PREFIX }}-${{ github.base_ref }}.netlify.app" >> $GITHUB_STEP_SUMMARY
+          echo "- Netlify: https://${{ github.base_ref }}-preview-${{ github.event.number }}--${{ env.SITE_PREFIX }}-stage.netlify.app" >> $GITHUB_STEP_SUMMARY
 
   status-check:
     name: Final Status Check
