@@ -107,10 +107,10 @@ jobs:
           # Deploy to the appropriate environment
           if [[ "${{ github.base_ref }}" == "main" ]]; then
             echo "Deploying preview for production..."
-            PREVIEW_URL=$(vercel deploy --prod --prebuilt --token=$VERCEL_TOKEN)
+            PREVIEW_URL=$(vercel deploy --prod --token=$VERCEL_TOKEN)
           else
             echo "Deploying to staging..."
-            PREVIEW_URL=$(vercel deploy --prebuilt --token=$VERCEL_TOKEN)
+            PREVIEW_URL=$(vercel deploy --token=$VERCEL_TOKEN)
           fi
 
           echo "url=$PREVIEW_URL" >> $GITHUB_OUTPUT
