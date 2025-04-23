@@ -15,7 +15,7 @@ on:
       - main
 
 env:
-  SITE_PREFIX: ${{ secrets.SITE_NAME }}
+  SITE_PREFIX: ${{ vars.SITE_NAME }}
 
 jobs:
   validate:
