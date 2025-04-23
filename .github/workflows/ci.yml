@@ -100,9 +100,11 @@ jobs:
           # Install Vercel CLI if not already installed
           npm i -g vercel@latest
 
-          # Configure Vercel CLI
-          mkdir -p ~/.vercel
-          echo "{\"orgId\":\"$VERCEL_ORG_ID\",\"projectId\":\"$VERCEL_PROJECT_ID\",\"token\":\"$VERCEL_TOKEN\"}" > ~/.vercel/config.json
+          # Remove any existing .vercel directory
+          rm -rf .vercel
+
+          # Link the project
+          vercel link --yes --token=$VERCEL_TOKEN --project=$VERCEL_PROJECT_ID
 
           # Deploy to the appropriate environment
           if [[ "${{ github.base_ref }}" == "main" ]]; then
