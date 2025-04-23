@@ -100,19 +100,13 @@ jobs:
           # Install Vercel CLI if not already installed
           npm i -g vercel@latest
 
-          # Remove any existing .vercel directory
-          rm -rf .vercel
-
-          # Link the project
-          vercel link --yes --token=$VERCEL_TOKEN --project=$VERCEL_PROJECT_ID
-
           # Deploy to the appropriate environment
           if [[ "${{ github.base_ref }}" == "main" ]]; then
             echo "Deploying preview for production..."
-            PREVIEW_URL=$(vercel deploy --prod --token=$VERCEL_TOKEN)
+            PREVIEW_URL=$(vercel deploy --prod --token=$VERCEL_TOKEN --project=$VERCEL_PROJECT_ID)
           else
             echo "Deploying to staging..."
-            PREVIEW_URL=$(vercel deploy --token=$VERCEL_TOKEN)
+            PREVIEW_URL=$(vercel deploy --token=$VERCEL_TOKEN --project=$VERCEL_PROJECT_ID)
           fi
 
           echo "url=$PREVIEW_URL" >> $GITHUB_OUTPUT
