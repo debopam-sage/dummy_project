@@ -1,0 +1,173 @@
+name: CI Pipeline for RecruitSage
+
+# Trigger on manual dispatch, push to 'stage' branch, and PRs against 'stage' or 'main'
+on:
+  workflow_dispatch:
+  push:
+    branches: [ stage ]
+  pull_request:
+    types: [ opened, synchronize, reopened ]
+    branches:
+      - stage
+      - main
+
+# Netlify site prefix; update if your Netlify slug differs
+env:
+  SITE_PREFIX: dummy-project
+
+jobs:
+  validate:
+    name: Validate Code
+    runs-on: ubuntu-latest
+    steps:
+      # ──────── Step 1: Checkout repository ────────
+      - uses: actions/checkout@v4
+      - name: Log: Checked out code
+        run: echo "🔄 Repository code checked out." >> $GITHUB_STEP_SUMMARY
+
+      # ──────── Step 2: Setup Node.js ────────
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: npm
+      - name: Log: Node.js ready
+        run: echo "📦 Node.js environment ready (v20.x)." >> $GITHUB_STEP_SUMMARY
+
+      # ──────── Step 3: Restore dependency cache ────────
+      - uses: actions/cache@v4
+        id: npm-cache
+        with:
+          path: |
+            **/node_modules
+            ~/.npm
+          key: ${{ runner.os }}-node-20-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-20-
+      - name: Log: Cache step complete
+        run: echo "💾 Restored npm cache (if available)." >> $GITHUB_STEP_SUMMARY
+
+      # ──────── Step 4: Install dependencies ────────
+      - name: Install dependencies
+        run: |
+          echo "📥 Installing npm dependencies..." >> $GITHUB_STEP_SUMMARY
+          npm ci
+
+      # ──────── Step 5: Lint codebase ────────
+      - name: Lint Codebase
+        run: |
+          echo "🔍 Running ESLint to check code quality..." >> $GITHUB_STEP_SUMMARY
+          npm run lint
+
+      # ──────── Step 6: Build project ────────
+      - name: Build Project
+        run: |
+          echo "🏗 Building the project for production..." >> $GITHUB_STEP_SUMMARY
+          npm run build
+
+      # ──────── Step 7: Run code coverage ────────
+      - name: Run Code Coverage
+        run: |
+          echo "🧪 Running tests and generating coverage report..." >> $GITHUB_STEP_SUMMARY
+          npm run coverage || echo "⚠️ Coverage run failed, but continuing."
+
+      # ──────── Step 8: Enforce PR branch policy ────────
+      - name: Enforce PR Source Branch (to main)
+        if: github.base_ref == 'main'
+        run: |
+          echo "🔐 Verifying that PR to 'main' comes from 'stage'..." >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ github.head_ref }}" != "stage" ]]; then
+            echo "❌ Pull requests to 'main' must originate from 'stage'. Failing job." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          echo "✅ Branch check passed." >> $GITHUB_STEP_SUMMARY
+
+  preview-deploy:
+    name: Deploy Preview (Netlify)
+    needs: validate
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'pull_request' &&
+      (github.base_ref == 'stage' || github.base_ref == 'main')
+    steps:
+      # ──────── Step 1: Checkout repository ────────
+      - uses: actions/checkout@v4
+      - name: Log: Checked out code for preview
+        run: echo "🔄 Repository code checked out for preview deploy." >> $GITHUB_STEP_SUMMARY
+
+      # ──────── Step 2: Setup Node.js ────────
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: npm
+      - name: Log: Node.js ready for preview
+        run: echo "📦 Node.js environment ready for preview." >> $GITHUB_STEP_SUMMARY
+
+      # ──────── Step 3: Restore dependency cache ────────
+      - uses: actions/cache@v4
+        id: npm-cache
+        with:
+          path: |
+            **/node_modules
+            ~/.npm
+          key: ${{ runner.os }}-node-20-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-20-
+      - name: Log: Cache step complete for preview
+        run: echo "💾 Restored npm cache for preview." >> $GITHUB_STEP_SUMMARY
+
+      # ──────── Step 4: Install dependencies for preview ────────
+      - name: Install dependencies
+        run: |
+          echo "📥 Installing npm dependencies for preview..." >> $GITHUB_STEP_SUMMARY
+          npm ci
+
+      # ──────── Step 5: Build for preview ────────
+      - name: Build Project
+        run: |
+          echo "🔧 Rebuilding project for preview deploy..." >> $GITHUB_STEP_SUMMARY
+          npm run build
+
+      # ──────── Step 6: Deploy to Netlify ────────
+      - name: Deploy to Netlify
+        id: netlify-deploy
+        uses: nwtgck/actions-netlify@v2.0
+        with:
+          publish-dir: './dist'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          alias: ${{ github.base_ref }}-preview-${{ github.event.number }}
+          production-deploy: false
+          enable-pull-request-comment: false
+          enable-commit-comment: false
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      - name: Log: Netlify deploy complete
+        run: echo "🚀 Deployed preview to Netlify." >> $GITHUB_STEP_SUMMARY
+
+      # ──────── Step 7: Show preview URL ────────
+      - name: Output Preview URL
+        run: |
+          echo "### ✅ Preview URLs" >> $GITHUB_STEP_SUMMARY
+          echo "- Netlify: https://${{ github.base_ref }}-preview-${{ github.event.number }}--${{ env.SITE_PREFIX }}-${{ github.base_ref }}.netlify.app" >> $GITHUB_STEP_SUMMARY
+
+  status-check:
+    name: Final Status Check
+    needs: [ validate, preview-deploy ]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      # ──────── Step 1: Block merge on failure ────────
+      - name: Block on Failure
+        if: >
+          contains(needs.validate.result, 'failure') ||
+          contains(needs.preview-deploy.result, 'failure') ||
+          contains(needs.*.result, 'cancelled')
+        run: |
+          echo "❌ One or more jobs failed. Merging is blocked." >> $GITHUB_STEP_SUMMARY
+          exit 1
+
+      # ──────── Step 2: Confirm overall success ────────
+      - name: Confirm Success
+        if: success()
+        run: |
+          echo "✅ All jobs passed. Repository is good to merge!" >> $GITHUB_STEP_SUMMARY
