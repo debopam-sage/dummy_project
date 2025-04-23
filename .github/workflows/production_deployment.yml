@@ -62,8 +62,8 @@ jobs:
           }
           EOF
           DEPLOY_URL=$(vercel deploy --prod --token=${{ secrets.VERCEL_TOKEN }})
-          echo "url=$DEPLOY_URL" >> $GITHUB_OUTPUT
-          echo "✅ Vercel URL: $DEPLOY_URL" >> $GITHUB_STEP_SUMMARY
+          echo "VERCEL_URL=$DEPLOY_URL" >> $GITHUB_ENV
+          echo "🚀 Vercel URL: https://${{ env.SITE_PREFIX }}.vercel.app" >> $GITHUB_STEP_SUMMARY
         env:
           VERCEL_TOKEN:    ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID:   ${{ secrets.VERCEL_ORG_ID }}
