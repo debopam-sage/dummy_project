@@ -1,0 +1,159 @@
+name: CI Pipeline for RecruitSage
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ stage ]
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: 
+      - stage
+      - main
+
+jobs:
+  validate:
+    name: Validate Code
+    runs-on: ubuntu-latest
+    environment: ${{ github.base_ref == 'main' && 'prod' || 'stage' }}
+
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        id: npm-cache
+        with:
+          path: |
+            **/node_modules
+            ~/.npm
+          key: ${{ runner.os }}-node-20-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-20-
+            ${{ runner.os }}-node-
+            
+      - name: Install dependencies
+        if: steps.npm-cache.outputs.cache-hit != 'true'
+        run: npm ci
+        
+      - name: Run ESLint
+        run: npm run lint
+        
+      - name: Run tests with coverage
+        run: |
+          npm test -- --coverage --coverageReporters="text" --coverageReporters="text-summary"
+          
+      - name: Check coverage and generate report
+        run: |
+          echo "## Test Coverage Report" >> $GITHUB_STEP_SUMMARY
+          npm test -- --coverage --coverageReporters="text-summary" >> $GITHUB_STEP_SUMMARY
+        
+      - name: Build project
+        run: npm run build
+
+      - name: Check if PR to main
+        if: github.base_ref == 'main'
+        run: |
+          if [[ "${{ github.head_ref }}" != "stage" ]]; then
+            echo "Error: Pull requests to main branch must come from stage branch"
+            exit 1
+          fi
+
+  preview-deploy:
+    needs: validate
+    if: github.event_name == 'pull_request' && (github.base_ref == 'stage' || github.base_ref == 'main')
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.base_ref == 'main' && 'prod' || 'stage' }}
+
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        id: npm-cache
+        with:
+          path: |
+            **/node_modules
+            ~/.npm
+          key: ${{ runner.os }}-node-20-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-20-
+            ${{ runner.os }}-node-
+          
+      - name: Install dependencies
+        if: steps.npm-cache.outputs.cache-hit != 'true'
+        run: npm ci
+        
+      - name: Build project
+        run: npm run build
+
+      - name: Deploy to Vercel Preview
+        id: vercel-preview
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          # Install Vercel CLI if not already installed
+          npm i -g vercel@latest
+
+          # Configure Vercel CLI
+          mkdir -p ~/.vercel
+          echo "{\"orgId\":\"$VERCEL_ORG_ID\",\"projectId\":\"$VERCEL_PROJECT_ID\",\"token\":\"$VERCEL_TOKEN\"}" > ~/.vercel/config.json
+
+          # Deploy to the appropriate environment
+          if [[ "${{ github.base_ref }}" == "main" ]]; then
+            echo "Deploying preview for production..."
+            PREVIEW_URL=$(vercel deploy --prod --prebuilt --token=$VERCEL_TOKEN)
+          else
+            echo "Deploying to staging..."
+            PREVIEW_URL=$(vercel deploy --prebuilt --token=$VERCEL_TOKEN)
+          fi
+
+          echo "url=$PREVIEW_URL" >> $GITHUB_OUTPUT
+
+      - name: Deploy to Netlify Preview
+        uses: nwtgck/actions-netlify@v2.0
+        with:
+          publish-dir: './dist'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          deploy-message: "Deploy Preview from GitHub Actions"
+          enable-pull-request-comment: true
+          enable-commit-comment: false
+          alias: ${{ github.base_ref == 'main' && 'prod-preview' || 'stage-preview' }}-${{ github.event.number }}
+          production-deploy: false
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+
+      - name: Set Preview URL Summary
+        run: |
+          echo "### Vercel Preview URL: ${{ steps.vercel-preview.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+
+  status-check:
+    needs: [validate, preview-deploy]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check workflow status
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: |
+          echo "Required checks failed. All checks must pass before merging.."
+          exit 1
+      
+      - name: Success status
+        if: success()
+        run: |
+          echo "All required checks passed successfully."
