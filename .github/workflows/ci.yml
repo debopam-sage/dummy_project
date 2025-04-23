@@ -18,13 +18,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
           cache: 'npm'
-
+          
       - name: Cache dependencies
         uses: actions/cache@v4
         id: npm-cache
@@ -36,13 +36,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-20-
             ${{ runner.os }}-node-
-
+            
       - name: Install dependencies
         if: steps.npm-cache.outputs.cache-hit != 'true'
         run: npm ci
-
+        
       - name: Run ESLint
         run: npm run lint
+        
 
       - name: Build project
         run: npm run build
@@ -64,13 +65,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
           cache: 'npm'
-
+          
       - name: Cache dependencies
         uses: actions/cache@v4
         id: npm-cache
@@ -82,11 +83,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-20-
             ${{ runner.os }}-node-
-
+          
       - name: Install dependencies
         if: steps.npm-cache.outputs.cache-hit != 'true'
         run: npm ci
-
+        
       - name: Build project
         run: npm run build
 
@@ -97,17 +98,11 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
+          # Install Vercel CLI if not already installed
           npm i -g vercel@latest
 
-          # Create .vercel/project.json for non-interactive CI linking
-          mkdir -p .vercel
-          cat <<EOF > .vercel/project.json
-          {
-            "orgId": "$VERCEL_ORG_ID",
-            "projectId": "$VERCEL_PROJECT_ID"
-          }
-          EOF
-
+          rm -rf .vercel
+          # Deploy to the appropriate environment
           if [[ "${{ github.base_ref }}" == "main" ]]; then
             echo "Deploying preview for production..."
             PREVIEW_URL=$(vercel deploy --token=$VERCEL_TOKEN)
@@ -124,7 +119,7 @@ jobs:
           publish-dir: './dist'
           github-token: ${{ secrets.GITHUB_TOKEN }}
           deploy-message: "Deploy Preview from GitHub Actions"
-          enable-pull-request-comment: false
+          enable-pull-request-comment: true
           enable-commit-comment: false
           alias: ${{ github.base_ref == 'main' && 'prod-preview' || 'stage-preview' }}-${{ github.event.number }}
           production-deploy: false
@@ -132,9 +127,9 @@ jobs:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
 
-      - name: Set Netlify Preview URL Summary
+      - name: Set Preview URL Summary
         run: |
-          echo "### Netlify Preview URL: https://${{ github.base_ref == 'main' && 'prod-preview' || 'stage-preview' }}-${{ github.event.number }}--dummy-project-${{ github.base_ref }}.netlify.app" >> $GITHUB_STEP_SUMMARY
+          echo "### Vercel Preview URL: ${{ steps.vercel-preview.outputs.url }}" >> $GITHUB_STEP_SUMMARY
 
   status-check:
     needs: [validate, preview-deploy]
@@ -146,7 +141,7 @@ jobs:
         run: |
           echo "Required checks failed. All checks must pass before merging.."
           exit 1
-
+      
       - name: Success status
         if: success()
         run: |
