@@ -1,20 +1,24 @@
 name: CI Pipeline for RecruitSage
 
+# Trigger on manual dispatch, pushes to 'stage', and PRs targeting 'stage' or 'main'
 on:
   workflow_dispatch:
   push:
     branches: [ stage ]
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [ opened, synchronize, reopened ]
     branches:
       - stage
       - main
+
+# Global env: pull the Netlify site name from a GitHub Secret
+env:
+  NETLIFY_SITE_NAME: ${{ secrets.NETLIFY_SITE_NAME }}
 
 jobs:
   validate:
     name: Validate Code
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -22,7 +26,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
-          cache: 'npm'
+          cache: npm
 
       - name: Cache dependencies
         uses: actions/cache@v4
@@ -78,8 +82,10 @@ jobs:
   preview-deploy:
     name: Deploy Preview (Netlify)
     needs: validate
-    if: github.event_name == 'pull_request' && (github.base_ref == 'stage' || github.base_ref == 'main')
     runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'pull_request' &&
+      (github.base_ref == 'stage' || github.base_ref == 'main')
 
     steps:
       - uses: actions/checkout@v4
@@ -88,7 +94,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
-          cache: 'npm'
+          cache: npm
 
       - name: Cache dependencies
         uses: actions/cache@v4
@@ -105,7 +111,7 @@ jobs:
         if: steps.npm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Check if PR contains deployment keywords
+      - name: Check for Deployment Keywords
         run: |
           TITLE="${{ github.event.pull_request.title }}"
           BODY="${{ github.event.pull_request.body }}"
@@ -114,11 +120,11 @@ jobs:
           if echo "$TEXT" | grep -qE "ready for preview|deploying|show preview|ready to ship"; then
             echo "🟢 Deployment keywords found, proceeding with Netlify deploy." >> $GITHUB_STEP_SUMMARY
           else
-            echo "🛑 No deploy keywords found in PR title or body. Skipping preview deploy." >> $GITHUB_STEP_SUMMARY
+            echo "🛑 No deploy keywords found. Skipping preview deploy." >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
 
-      - name: Build Project
+      - name: Rebuild Project for Preview
         run: |
           echo "🔧 Rebuilding project for preview deploy..." >> $GITHUB_STEP_SUMMARY
           npm run build
@@ -129,7 +135,7 @@ jobs:
         with:
           publish-dir: './dist'
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          deploy-message: "Deploy Preview from GitHub Actions"
+          deploy-message: "Preview Deploy from PR #${{ github.event.number }}"
           enable-pull-request-comment: false
           enable-commit-comment: false
           alias: pr-${{ github.event.number }}
@@ -141,17 +147,19 @@ jobs:
       - name: Output Preview URL
         run: |
           echo "### ✅ Preview URL" >> $GITHUB_STEP_SUMMARY
-          echo "- Netlify: https://pr-${{ github.event.number }}--dummy-project-${{ github.base_ref }}.netlify.app" >> $GITHUB_STEP_SUMMARY
+          echo "- Netlify: https://pr-${{ github.event.number }}--${{ env.NETLIFY_SITE_NAME }}.netlify.app" >> $GITHUB_STEP_SUMMARY
 
   status-check:
     name: Final Status Check
-    needs: [validate, preview-deploy]
+    needs: [ validate, preview-deploy ]
     runs-on: ubuntu-latest
     if: always()
-
     steps:
-      - name: Validate Job Results
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+      - name: Block on Failure
+        if: >
+          contains(needs.validate.result, 'failure') ||
+          contains(needs.preview-deploy.result, 'failure') ||
+          contains(needs.*.result, 'cancelled')
         run: |
           echo "❌ One or more jobs failed. Merging is blocked." >> $GITHUB_STEP_SUMMARY
           exit 1
