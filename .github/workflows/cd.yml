@@ -58,9 +58,16 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          npm i -g vercel
+          npm i -g vercel@latest
 
-          vercel pull --yes --environment=${{ github.ref == 'refs/heads/main' && 'production' || 'preview' }} --token=$VERCEL_TOKEN
+          # Manually create Vercel config to avoid link
+          mkdir -p .vercel
+          cat <<EOF > .vercel/project.json
+          {
+            "orgId": "$VERCEL_ORG_ID",
+            "projectId": "$VERCEL_PROJECT_ID"
+          }
+          EOF
 
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "Deploying to production..."
