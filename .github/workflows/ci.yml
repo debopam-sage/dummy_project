@@ -96,6 +96,8 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           alias: ${{ github.base_ref }}-preview-${{ github.event.number }}
           production-deploy: false
+          enable-pull-request-comment: false   # ← disable PR comments
+          enable-commit-comment: false         # ← disable commit comments
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
