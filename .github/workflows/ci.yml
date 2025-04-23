@@ -41,42 +41,37 @@ jobs:
 
       - name: Lint Codebase
         run: |
-          echo "🔍 Running ESLint..."
-          npm run lint
+          echo "🔍 Starting ESLint to check code quality..." >> $GITHUB_STEP_SUMMARY
+          npm run lint | tee eslint-output.log
+          echo "### 🔍 ESLint Results" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat eslint-output.log >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Build Project
         run: |
-          echo "🏗 Building the project..."
-          npm run build
+          echo "🏗 Starting production build..." >> $GITHUB_STEP_SUMMARY
+          npm run build | tee build-output.log
+          echo "### 🏗 Build Output" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat build-output.log >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
-      - name: Run Code Coverage
+      - name: Run and Capture Code Coverage
         run: |
-          echo "🧪 Running code coverage..."
-          npm run coverage || echo "⚠️ Coverage run failed"
-
-      - name: Output Code Coverage to Summary
-        if: success()
-        run: |
-          echo "📊 Generating coverage summary UI..."
-          if [ -f coverage/coverage-summary.json ]; then
-            echo "### 🧪 Code Coverage Summary" >> $GITHUB_STEP_SUMMARY
-            jq -r '."total" | 
-              "| Metric | % Covered | Covered / Total |",
-              "|--------|------------|------------------|",
-              "| Lines  | \(.lines.pct)% | \(.lines.covered)/\(.lines.total) |",
-              "| Stmts  | \(.statements.pct)% | \(.statements.covered)/\(.statements.total) |",
-              "| Branch | \(.branches.pct)% | \(.branches.covered)/\(.branches.total) |",
-              "| Funcs  | \(.functions.pct)% | \(.functions.covered)/\(.functions.total) |"' coverage/coverage-summary.json >> $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ No coverage-summary.json file found. Skipping summary."
-          fi
+          echo "🧪 Running code coverage and writing summary..." >> $GITHUB_STEP_SUMMARY
+          npm run coverage | tee coverage-output.log
+          echo "### 🧪 Code Coverage Output (Raw)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat coverage-output.log >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Enforce PR Source Branch (to main)
         if: github.base_ref == 'main'
         run: |
-          echo "🔐 Checking if PR to main is from stage branch..."
+          echo "🔐 Checking if PR to main is from stage branch..." >> $GITHUB_STEP_SUMMARY
           if [[ "${{ github.head_ref }}" != "stage" ]]; then
-            echo "❌ Pull requests to main branch must come from stage branch"
+            echo "❌ Pull requests to main branch must come from stage branch" >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
 
@@ -117,15 +112,15 @@ jobs:
           TEXT="$(echo "$TITLE $BODY" | tr '[:upper:]' '[:lower:]')"
 
           if echo "$TEXT" | grep -qE "ready for preview|deploying|show preview|ready to ship"; then
-            echo "🟢 Deployment keywords found, proceeding with Netlify deploy."
+            echo "🟢 Deployment keywords found, proceeding with Netlify deploy." >> $GITHUB_STEP_SUMMARY
           else
-            echo "🛑 No deploy keywords found in PR title or body. Skipping preview deploy."
+            echo "🛑 No deploy keywords found in PR title or body. Skipping preview deploy." >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
 
       - name: Build Project
         run: |
-          echo "🔧 Rebuilding for deployment..."
+          echo "🔧 Rebuilding project for preview deploy..." >> $GITHUB_STEP_SUMMARY
           npm run build
 
       - name: Deploy to Netlify
@@ -137,7 +132,7 @@ jobs:
           deploy-message: "Deploy Preview from GitHub Actions"
           enable-pull-request-comment: false
           enable-commit-comment: false
-          alias: pr-${{ github.event.number }}
+          alias: pr${{ github.event.number }}-${{ github.event.pull_request.head.ref }}
           production-deploy: false
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
@@ -146,7 +141,7 @@ jobs:
       - name: Output Preview URL
         run: |
           echo "### ✅ Preview URL" >> $GITHUB_STEP_SUMMARY
-          echo "- Netlify: https://pr-${{ github.event.number }}--dummy-project-${{ github.base_ref }}.netlify.app" >> $GITHUB_STEP_SUMMARY
+          echo "- Netlify: https://pr${{ github.event.number }}-${{ github.event.pull_request.head.ref }}--dummy-project-${{ github.base_ref }}.netlify.app" >> $GITHUB_STEP_SUMMARY
 
   status-check:
     name: Final Status Check
@@ -158,10 +153,10 @@ jobs:
       - name: Validate Job Results
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: |
-          echo "❌ One or more jobs failed. Merging is blocked."
+          echo "❌ One or more jobs failed. Merging is blocked." >> $GITHUB_STEP_SUMMARY
           exit 1
 
       - name: Confirm Success
         if: success()
         run: |
-          echo "✅ All jobs passed. Good to go!"
+          echo "✅ All jobs passed. Good to go!" >> $GITHUB_STEP_SUMMARY
