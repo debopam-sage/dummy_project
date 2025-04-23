@@ -1,106 +1,124 @@
-name: CD
+name: CI Pipeline for RecruitSage
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release version (e.g., v1.2.3)'
-        required: true
-        type: string
-      description:
-        description: 'Release description'
-        required: true
-        type: string
+  push:
+    branches: [ stage ]
+  pull_request:
+    types: [ opened, synchronize, reopened ]
+    branches:
+      - stage
+      - main
+
+# “dummy-project” is your Netlify site slug prefix; adjust if yours differs
+env:
+  SITE_PREFIX: dummy-project
 
 jobs:
-  prepare-release:
-    name: Prepare Release
+  validate:
+    name: Validate Code
     runs-on: ubuntu-latest
-    environment: ${{ github.ref == 'refs/heads/main' && 'prod' || 'stage' }}
-
-    steps:
-      - name: Check branch and set environment
-        run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "Deploying to production environment"
-          elif [[ "${{ github.ref }}" == "refs/heads/stage" ]]; then
-            echo "Deploying to staging environment"
-          else
-            echo "Deployments must be triggered from main or stage branch"
-            exit 1
-          fi
-
-  deploy:
-    needs: prepare-release
-    runs-on: ubuntu-latest
-    environment:
-      name: ${{ github.ref == 'refs/heads/main' && 'prod' || 'stage' }}
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
-          cache: 'npm'
-
+          cache: npm
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        id: npm-cache
+        with:
+          path: |
+            **/node_modules
+            ~/.npm
+          key: ${{ runner.os }}-node-20-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-20-
       - name: Install dependencies
+        if: steps.npm-cache.outputs.cache-hit != 'true'
         run: npm ci
-
-      - name: Build project
-        run: npm run build
-
-      - name: Deploy to Vercel
-        id: vercel-deploy
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      - name: Lint Codebase
         run: |
-          npm i -g vercel@latest
-
-          # Manually create Vercel config to avoid link
-          mkdir -p .vercel
-          cat <<EOF > .vercel/project.json
-          {
-            "orgId": "$VERCEL_ORG_ID",
-            "projectId": "$VERCEL_PROJECT_ID"
-          }
-          EOF
-
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "Deploying to production..."
-            DEPLOY_URL=$(vercel deploy --prod --token=$VERCEL_TOKEN)
-          else
-            echo "Deploying to staging..."
-            DEPLOY_URL=$(vercel deploy --token=$VERCEL_TOKEN)
+          echo "🔍 Running ESLint..."
+          npm run lint
+      - name: Build Project
+        run: |
+          echo "🏗 Building the project..."
+          npm run build
+      - name: Run Code Coverage
+        run: |
+          echo "🧪 Running code coverage..."
+          npm run coverage || echo "⚠️ Coverage run failed"
+      - name: Enforce PR Source Branch (to main)
+        if: github.base_ref == 'main'
+        run: |
+          echo "🔐 Checking if PR to main is from stage branch..."
+          if [[ "${{ github.head_ref }}" != "stage" ]]; then
+            echo "❌ Pull requests to main branch must come from stage branch"
+            exit 1
           fi
 
-          echo "url=$DEPLOY_URL" >> $GITHUB_OUTPUT
-
+  preview-deploy:
+    name: Deploy Preview (Netlify)
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && (github.base_ref == 'stage' || github.base_ref == 'main')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: npm
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        id: npm-cache
+        with:
+          path: |
+            **/node_modules
+            ~/.npm
+          key: ${{ runner.os }}-node-20-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-20-
+      - name: Install dependencies
+        if: steps.npm-cache.outputs.cache-hit != 'true'
+        run: npm ci
+      - name: Build Project
+        run: |
+          echo "🔧 Rebuilding for deployment..."
+          npm run build
       - name: Deploy to Netlify
+        id: netlify-deploy
         uses: nwtgck/actions-netlify@v2.0
         with:
           publish-dir: './dist'
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          deploy-message: "${{ github.ref == 'refs/heads/main' && 'Production' || 'Staging' }} Deploy v${{ github.event.inputs.version }}"
-          enable-pull-request-comment: false
-          enable-commit-comment: true
-          production-deploy: ${{ github.ref == 'refs/heads/main' }}
-          alias: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+          alias: ${{ github.base_ref }}-preview-${{ github.event.number }}
+          production-deploy: false
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      - name: Output Preview URL
+        run: |
+          echo "### ✅ Preview URLs" >> $GITHUB_STEP_SUMMARY
+          echo "- Netlify: https://${{ github.base_ref }}-preview-${{ github.event.number }}--${{ env.SITE_PREFIX }}-${{ github.base_ref }}.netlify.app" >> $GITHUB_STEP_SUMMARY
 
-      - name: Create Release
-        if: github.ref == 'refs/heads/main'
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.event.inputs.version }}
-          release_name: Release ${{ github.event.inputs.version }}
-          body: ${{ github.event.inputs.description }}
-          draft: false
-          prerelease: false
+  status-check:
+    name: Final Status Check
+    needs: [ validate, preview-deploy ]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Block on Failure
+        if: >
+          contains(needs.validate.result, 'failure') ||
+          contains(needs.preview-deploy.result, 'failure') ||
+          contains(needs.*.result, 'cancelled')
+        run: |
+          echo "❌ One or more jobs failed. Merging is blocked."
+          exit 1
+      - name: Confirm Success
+        if: success()
+        run: |
+          echo "✅ All jobs passed. Good to go!"
