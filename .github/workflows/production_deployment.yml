@@ -80,7 +80,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           deploy-message: "Production Deploy ${{ github.event.inputs.version }}"
           production-deploy: true
-          alias: production
           enable-pull-request-comment: false
           enable-commit-comment: true
         env:
@@ -89,7 +88,7 @@ jobs:
 
       - name: "Log: Netlify URL"
         run: |
-          echo "🚀 Netlify URL: https://production--${{ env.SITE_PREFIX }}-main.netlify.app" >> $GITHUB_STEP_SUMMARY
+          echo "🚀 Netlify URL: https://${{ env.SITE_PREFIX }}.netlify.app" >> $GITHUB_STEP_SUMMARY
 
       #──────────────────────────────────────────────────────────────────
       # 5. Create GitHub Release
