@@ -35,7 +35,6 @@ jobs:
           key: ${{ runner.os }}-node-20-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-20-
-            ${{ runner.os }}-node-
 
       - name: Install dependencies
         if: steps.npm-cache.outputs.cache-hit != 'true'
@@ -56,6 +55,23 @@ jobs:
           echo "🧪 Running code coverage..."
           npm run coverage || echo "⚠️ Coverage run failed"
 
+      - name: Output Code Coverage to Summary
+        if: success()
+        run: |
+          echo "📊 Generating coverage summary UI..."
+          if [ -f coverage/coverage-summary.json ]; then
+            echo "### 🧪 Code Coverage Summary" >> $GITHUB_STEP_SUMMARY
+            jq -r '."total" | 
+              "| Metric | % Covered | Covered / Total |",
+              "|--------|------------|------------------|",
+              "| Lines  | \(.lines.pct)% | \(.lines.covered)/\(.lines.total) |",
+              "| Stmts  | \(.statements.pct)% | \(.statements.covered)/\(.statements.total) |",
+              "| Branch | \(.branches.pct)% | \(.branches.covered)/\(.branches.total) |",
+              "| Funcs  | \(.functions.pct)% | \(.functions.covered)/\(.functions.total) |"' coverage/coverage-summary.json >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ No coverage-summary.json file found. Skipping summary."
+          fi
+
       - name: Enforce PR Source Branch (to main)
         if: github.base_ref == 'main'
         run: |
@@ -68,7 +84,19 @@ jobs:
   preview-deploy:
     name: Deploy Preview (Netlify)
     needs: validate
-    if: github.event_name == 'pull_request' && (github.base_ref == 'stage' || github.base_ref == 'main')
+    if: |
+      github.event_name == 'pull_request' &&
+      (github.base_ref == 'stage' || github.base_ref == 'main') &&
+      (
+        contains(toLower(github.event.pull_request.title), 'ready for preview') ||
+        contains(toLower(github.event.pull_request.title), 'deploying') ||
+        contains(toLower(github.event.pull_request.title), 'show preview') ||
+        contains(toLower(github.event.pull_request.title), 'ready to ship') ||
+        contains(toLower(github.event.pull_request.body), 'ready for preview') ||
+        contains(toLower(github.event.pull_request.body), 'deploying') ||
+        contains(toLower(github.event.pull_request.body), 'show preview') ||
+        contains(toLower(github.event.pull_request.body), 'ready to ship')
+      )
     runs-on: ubuntu-latest
     environment:
       name: ${{ github.base_ref == 'main' && 'prod' || 'stage' }}
@@ -92,7 +120,6 @@ jobs:
           key: ${{ runner.os }}-node-20-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-20-
-            ${{ runner.os }}-node-
 
       - name: Install dependencies
         if: steps.npm-cache.outputs.cache-hit != 'true'
@@ -112,7 +139,7 @@ jobs:
           deploy-message: "Deploy Preview from GitHub Actions"
           enable-pull-request-comment: false
           enable-commit-comment: false
-          alias: ${{ github.base_ref == 'main' && 'prod-preview' || 'stage-preview' }}-${{ github.event.number }}
+          alias: pr-${{ github.event.number }}
           production-deploy: false
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
@@ -120,8 +147,8 @@ jobs:
 
       - name: Output Preview URL
         run: |
-          echo "### ✅ Preview URLs" >> $GITHUB_STEP_SUMMARY
-          echo "- Netlify: https://${{ github.base_ref == 'main' && 'prod-preview' || 'stage-preview' }}-${{ github.event.number }}--dummy-project-${{ github.base_ref }}.netlify.app" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Preview URL" >> $GITHUB_STEP_SUMMARY
+          echo "- Netlify: https://pr-${{ github.event.number }}--dummy-project-${{ github.base_ref }}.netlify.app" >> $GITHUB_STEP_SUMMARY
 
   status-check:
     name: Final Status Check
