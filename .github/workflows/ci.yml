@@ -132,7 +132,7 @@ jobs:
           deploy-message: "Deploy Preview from GitHub Actions"
           enable-pull-request-comment: false
           enable-commit-comment: false
-          alias: pr${{ github.event.number }}-${{ github.event.pull_request.head.ref }}
+          alias: pr-${{ github.event.number }}
           production-deploy: false
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
@@ -141,7 +141,7 @@ jobs:
       - name: Output Preview URL
         run: |
           echo "### ✅ Preview URL" >> $GITHUB_STEP_SUMMARY
-          echo "- Netlify: https://pr${{ github.event.number }}-${{ github.event.pull_request.head.ref }}--dummy-project-${{ github.base_ref }}.netlify.app" >> $GITHUB_STEP_SUMMARY
+          echo "- Netlify: https://pr-${{ github.event.number }}--dummy-project-${{ github.base_ref }}.netlify.app" >> $GITHUB_STEP_SUMMARY
 
   status-check:
     name: Final Status Check
