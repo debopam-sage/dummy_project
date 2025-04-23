@@ -121,7 +121,7 @@ jobs:
           publish-dir: './dist'
           github-token: ${{ secrets.GITHUB_TOKEN }}
           deploy-message: "Deploy Preview from GitHub Actions"
-          enable-pull-request-comment: true
+          enable-pull-request-comment: false
           enable-commit-comment: false
           alias: ${{ github.base_ref == 'main' && 'prod-preview' || 'stage-preview' }}-${{ github.event.number }}
           production-deploy: false
@@ -129,9 +129,9 @@ jobs:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
 
-      - name: Set Preview URL Summary
+      - name: Set Netlify Preview URL Summary
         run: |
-          echo "### Vercel Preview URL: ${{ steps.vercel-preview.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          echo "### Netlify Preview URL: https://${{ github.base_ref == 'main' && 'prod-preview' || 'stage-preview' }}-${{ github.event.number }}--dummy-project-${{ github.base_ref }}.netlify.app" >> $GITHUB_STEP_SUMMARY
 
   status-check:
     needs: [validate, preview-deploy]
