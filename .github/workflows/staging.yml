@@ -169,7 +169,7 @@ jobs:
       - name: "Log: Output preview URL"
         run: |
           echo "### ✅ Preview URLs" >> $GITHUB_STEP_SUMMARY
-          echo "- Netlify: https://${{ github.base_ref }}-preview-${{ github.event.number }}--${{ env.SITE_PREFIX }}-${{ github.base_ref }}.netlify.app" >> $GITHUB_STEP_SUMMARY
+          echo "- Netlify: https://${{ github.base_ref }}-preview-${{ github.event.number }}-${{ env.SITE_PREFIX }}.netlify.app" >> $GITHUB_STEP_SUMMARY
 
   #────────────────────────────────────────────────────────────────
   # 3. Final Status Gate
