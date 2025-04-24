@@ -1,3 +1,2 @@
 https://stage-preview-42--recruit-sage.netlify.app/
-
 https://stage-preview-42-recruit-sage.netlify.app/
