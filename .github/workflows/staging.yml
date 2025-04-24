@@ -1,38 +1,53 @@
 name: Testing & Staging
 
+#──────────────────────────────────────────────────────────────────
+# Triggers
+#──────────────────────────────────────────────────────────────────
 on:
-  workflow_dispatch:
   push:
     branches:
-      - stage
+      - stage                                 # Only trigger on commits to 'stage'
   pull_request:
     types:
       - opened
       - synchronize
       - reopened
     branches:
-      - stage
-      - main
+      - stage                                 # PRs targeting 'stage'
+      - main                                  # PRs targeting 'main'
 
+#──────────────────────────────────────────────────────────────────
+# Global Environment Variables
+#──────────────────────────────────────────────────────────────────
 env:
-  SITE_PREFIX: ${{ vars.SITE_NAME }}
+  SITE_PREFIX: ${{ vars.SITE_NAME }}           # Prefix for preview URLs, injected from repo vars
 
 jobs:
+  #────────────────────────────────────────────────────────────────
+  # 1. Code Validation
+  #────────────────────────────────────────────────────────────────
   validate:
     name: Validate Code
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: "Log: Checked out code"
-        run: echo "🔄 Repository code checked out." >> $GITHUB_STEP_SUMMARY
+    runs-on: ubuntu-latest                     # Standard Ubuntu runner
 
+    steps:
+      # 1.1 Checkout repository
+      - uses: actions/checkout@v4
+
+      - name: "Log: Checked out code"
+        run: |
+          echo "🔄 Repository code checked out." >> $GITHUB_STEP_SUMMARY
+
+      # 1.2 Set up Node.js
       - uses: actions/setup-node@v4
         with:
           node-version: "20.x"
-          cache: npm
+          cache: npm                            # Enables npm caching
       - name: "Log: Node.js ready"
-        run: echo "📦 Node.js environment ready (v20.x)." >> $GITHUB_STEP_SUMMARY
+        run: |
+          echo "📦 Node.js environment ready (v20.x)." >> $GITHUB_STEP_SUMMARY
 
+      # 1.3 Restore npm cache
       - uses: actions/cache@v4
         id: npm-cache
         with:
@@ -43,28 +58,34 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-20-
       - name: "Log: Cache restored"
-        run: echo "💾 Restored npm cache (if available)." >> $GITHUB_STEP_SUMMARY
+        run: |
+          echo "💾 Restored npm cache (if available)." >> $GITHUB_STEP_SUMMARY
 
+      # 1.4 Install dependencies
       - name: "Log: Installing dependencies"
         run: |
           echo "📥 Installing npm dependencies..." >> $GITHUB_STEP_SUMMARY
           npm ci
 
+      # 1.5 Code quality enforcement
       - name: "Log: Running ESLint"
         run: |
           echo "🔍 Running ESLint to check code quality..." >> $GITHUB_STEP_SUMMARY
           npm run lint
 
+      # 1.6 Build artifacts
       - name: "Log: Building project"
         run: |
           echo "🏗 Building the project for production..." >> $GITHUB_STEP_SUMMARY
           npm run build
 
+      # 1.7 Test coverage
       - name: "Log: Running coverage"
         run: |
           echo "🧪 Running tests and generating coverage report..." >> $GITHUB_STEP_SUMMARY
           npm run coverage || echo "⚠️ Coverage run failed, but continuing."
 
+      # 1.8 Enforce branch‐policy on PR→main
       - name: "Log: Enforce branch policy"
         if: github.base_ref == 'main'
         run: |
@@ -75,25 +96,34 @@ jobs:
           fi
           echo "✅ Branch check passed." >> $GITHUB_STEP_SUMMARY
 
+  #────────────────────────────────────────────────────────────────
+  # 2. Preview Deployment (Netlify)
+  #────────────────────────────────────────────────────────────────
   preview-deploy:
     name: Deploy Preview (Netlify)
     needs: validate
-    if: > 
+    if: >
       github.event_name == 'pull_request' &&
       (github.base_ref == 'stage' || github.base_ref == 'main')
     runs-on: ubuntu-latest
+
     steps:
+      # 2.1 Checkout code for preview
       - uses: actions/checkout@v4
       - name: "Log: Checked out code for preview"
-        run: echo "🔄 Repository code checked out for preview deploy." >> $GITHUB_STEP_SUMMARY
+        run: |
+          echo "🔄 Repository code checked out for preview deploy." >> $GITHUB_STEP_SUMMARY
 
+      # 2.2 Prepare Node.js
       - uses: actions/setup-node@v4
         with:
           node-version: "20.x"
           cache: npm
       - name: "Log: Node.js ready for preview"
-        run: echo "📦 Node.js environment ready for preview." >> $GITHUB_STEP_SUMMARY
+        run: |
+          echo "📦 Node.js environment ready for preview." >> $GITHUB_STEP_SUMMARY
 
+      # 2.3 Restore npm cache
       - uses: actions/cache@v4
         id: npm-cache
         with:
@@ -104,18 +134,20 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-20-
       - name: "Log: Cache restored for preview"
-        run: echo "💾 Restored npm cache for preview." >> $GITHUB_STEP_SUMMARY
+        run: |
+          echo "💾 Restored npm cache for preview." >> $GITHUB_STEP_SUMMARY
 
+      # 2.4 Install & build for preview
       - name: "Log: Installing dependencies for preview"
         run: |
           echo "📥 Installing npm dependencies for preview..." >> $GITHUB_STEP_SUMMARY
           npm ci
-
       - name: "Log: Building for preview"
         run: |
           echo "🔧 Rebuilding project for preview deploy..." >> $GITHUB_STEP_SUMMARY
           npm run build
 
+      # 2.5 Netlify preview deploy
       - name: "Log: Deploy to Netlify"
         uses: nwtgck/actions-netlify@v2.0
         id: netlify-deploy
@@ -130,19 +162,26 @@ jobs:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
       - name: "Log: Netlify deploy complete"
-        run: echo "🚀 Preview deployed to Netlify." >> $GITHUB_STEP_SUMMARY
+        run: |
+          echo "🚀 Preview deployed to Netlify." >> $GITHUB_STEP_SUMMARY
 
+      # 2.6 Summarize preview URLs
       - name: "Log: Output preview URL"
         run: |
           echo "### ✅ Preview URLs" >> $GITHUB_STEP_SUMMARY
           echo "- Netlify: https://${{ github.base_ref }}-preview-${{ github.event.number }}--${{ env.SITE_PREFIX }}-${{ github.base_ref }}.netlify.app" >> $GITHUB_STEP_SUMMARY
 
+  #────────────────────────────────────────────────────────────────
+  # 3. Final Status Gate
+  #────────────────────────────────────────────────────────────────
   status-check:
     name: Final Status Check
     needs: [ validate, preview-deploy ]
     if: always()
     runs-on: ubuntu-latest
+
     steps:
+      # 3.1 Block merge if any step failed or was cancelled
       - name: "Log: Blocking merge on failure"
         if: >
           contains(needs.validate.result, 'failure') ||
@@ -152,6 +191,7 @@ jobs:
           echo "❌ One or more jobs failed. Merging is blocked." >> $GITHUB_STEP_SUMMARY
           exit 1
 
+      # 3.2 Approve merge when all checks pass
       - name: "Log: All checks passed"
         if: success()
         run: |

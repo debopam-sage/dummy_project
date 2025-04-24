@@ -5,7 +5,7 @@ function App() {
   return (
     <div className="App">
       <h1>Vite + React + TypeScript</h1>
-      <h1>Vites + Reacts + TypeScripts12</h1>
+      <h1>Vites + Reacts + TypeScripts123</h1>
       <Counter initialValue={0} />
     </div>
   )
