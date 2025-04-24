@@ -82,8 +82,15 @@ jobs:
       # 1.7 Test coverage
       - name: "Log: Running coverage"
         run: |
-          echo "🧪 Running tests and generating coverage report..." >> $GITHUB_STEP_SUMMARY
-          npm run coverage || echo "⚠️ Coverage run failed, but continuing."
+          echo "🧪 **Code Coverage Summary**" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          npm run coverage > coverage-output.txt || true
+
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          grep -A5 'Coverage summary' coverage-output.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          rm coverage-output.txt
 
       # 1.8 Enforce branch‐policy on PR→main
       - name: "Log: Enforce branch policy"
